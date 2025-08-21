@@ -1,0 +1,372 @@
+# 新人エンジニア向け：Python データクリーニング完全ガイド（Tableau用）
+
+## はじめに：なぜデータクリーニングが重要なのか？
+
+データサイエンスの世界では「データサイエンティストの時間の80%はデータクリーニングに費やされる」と言われています。特にTableauのようなBIツールでビジュアライゼーションを作成する際、クリーンなデータは必須です。
+
+### よくある問題
+- 欠損値だらけのデータ
+- 日付が文字列として保存されている
+- 数値に余計な記号が含まれている
+- 重複したレコード
+- 一貫性のないカテゴリ名
+
+これらの問題を放置すると、Tableauで正しいグラフが作れません！
+
+---
+
+## 📚 基本概念
+
+### データクリーニングとは？
+生データを分析やビジュアライゼーションに適した形に整える作業です。
+
+### Tableauが好むデータ形式
+1. **Tidy Data（整理されたデータ）**
+   - 1行 = 1つの観測値
+   - 1列 = 1つの変数
+   - 1テーブル = 1つのデータセット
+
+2. **適切なデータ型**
+   - 日付 → datetime型
+   - カテゴリ → category型
+   - 数値 → int/float型
+
+---
+
+## 🛠️ 必須ライブラリ
+
+```python
+import pandas as pd
+import numpy as np
+import datetime as dt
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+# バージョン確認
+print(f"pandas: {pd.__version__}")
+print(f"numpy: {np.__version__}")
+```
+
+---
+
+## 🎯 実践編：ステップバイステップ
+
+### Step 1: データの読み込みと基本確認
+
+```python
+# CSVファイルの読み込み
+df = pd.read_csv('your_data.csv')
+
+# 基本情報の確認
+print("=== データの基本情報 ===")
+print(f"行数: {len(df)}")
+print(f"列数: {len(df.columns)}")
+print(f"データ型:\n{df.dtypes}")
+print(f"欠損値:\n{df.isnull().sum()}")
+
+# 最初の5行を確認
+df.head()
+```
+
+### Step 2: 欠損値の処理
+
+```python
+def handle_missing_values(df):
+    """欠損値を適切に処理する"""
+    df_clean = df.copy()
+    
+    # 数値列：平均値で補完
+    numeric_columns = df_clean.select_dtypes(include=[np.number]).columns
+    for col in numeric_columns:
+        df_clean[col].fillna(df_clean[col].mean(), inplace=True)
+    
+    # カテゴリ列：最頻値で補完
+    categorical_columns = df_clean.select_dtypes(include=['object']).columns
+    for col in categorical_columns:
+        mode_value = df_clean[col].mode()
+        if len(mode_value) > 0:
+            df_clean[col].fillna(mode_value[0], inplace=True)
+        else:
+            df_clean[col].fillna('Unknown', inplace=True)
+    
+    return df_clean
+
+# 実行
+df_cleaned = handle_missing_values(df)
+```
+
+### Step 3: データ型の変換
+
+```python
+def convert_data_types(df):
+    """データ型を適切に変換する"""
+    df_converted = df.copy()
+    
+    # 日付列を自動検出して変換
+    for col in df_converted.columns:
+        if 'date' in col.lower() or 'time' in col.lower():
+            try:
+                df_converted[col] = pd.to_datetime(df_converted[col])
+                print(f"✅ {col} を日付型に変換しました")
+            except:
+                print(f"❌ {col} の日付変換に失敗しました")
+    
+    # 数値として読み込めるものを変換
+    for col in df_converted.select_dtypes(include=['object']).columns:
+        try:
+            # カンマや円マークを除去してから数値変換
+            cleaned_values = df_converted[col].astype(str).str.replace('[¥,$]', '', regex=True)
+            df_converted[col] = pd.to_numeric(cleaned_values)
+            print(f"✅ {col} を数値型に変換しました")
+        except:
+            pass  # 変換できない場合はそのまま
+    
+    return df_converted
+```
+
+### Step 4: 重複データの処理
+
+```python
+def remove_duplicates(df):
+    """重複データを削除する"""
+    initial_count = len(df)
+    df_no_duplicates = df.drop_duplicates()
+    final_count = len(df_no_duplicates)
+    
+    print(f"重複削除: {initial_count} → {final_count} ({initial_count - final_count}件削除)")
+    return df_no_duplicates
+```
+
+### Step 5: Tableau向けの最適化
+
+```python
+def optimize_for_tableau(df):
+    """Tableau用にデータを最適化する"""
+    df_optimized = df.copy()
+    
+    # 列名を標準化（小文字、アンダースコア）
+    df_optimized.columns = df_optimized.columns.str.lower().str.replace(' ', '_')
+    
+    # 日付から追加列を作成
+    date_columns = df_optimized.select_dtypes(include=['datetime64[ns]']).columns
+    for col in date_columns:
+        base_name = col.replace('_date', '').replace('_time', '')
+        df_optimized[f'{base_name}_year'] = df_optimized[col].dt.year
+        df_optimized[f'{base_name}_month'] = df_optimized[col].dt.month
+        df_optimized[f'{base_name}_quarter'] = df_optimized[col].dt.quarter
+        df_optimized[f'{base_name}_weekday'] = df_optimized[col].dt.day_name()
+    
+    # カテゴリ型に変換（メモリ節約）
+    for col in df_optimized.select_dtypes(include=['object']).columns:
+        if df_optimized[col].nunique() < len(df_optimized) * 0.5:  # ユニーク値が50%未満
+            df_optimized[col] = df_optimized[col].astype('category')
+    
+    return df_optimized
+```
+
+---
+
+## 📋 チートシート
+
+### 🔍 データ確認コマンド
+
+```python
+# 基本情報
+df.info()                    # データ型と欠損値の概要
+df.describe()               # 数値列の統計情報
+df.shape                    # (行数, 列数)
+df.columns.tolist()         # 列名のリスト
+
+# 欠損値確認
+df.isnull().sum()           # 列ごとの欠損値数
+df.isnull().sum().sum()     # 全体の欠損値数
+(df.isnull().sum() / len(df) * 100).round(2)  # 欠損値の割合
+
+# 重複確認
+df.duplicated().sum()       # 重複行数
+df.nunique()               # 列ごとのユニーク値数
+```
+
+### 🧹 クリーニングコマンド
+
+```python
+# 欠損値処理
+df.dropna()                           # 欠損値のある行を削除
+df.fillna(0)                         # 0で補完
+df.fillna(method='ffill')            # 前の値で補完
+df.fillna(df.mean())                 # 平均値で補完
+df.fillna(df.mode().iloc[0])         # 最頻値で補完
+
+# 重複削除
+df.drop_duplicates()                 # 完全重複行を削除
+df.drop_duplicates(subset=['col'])   # 特定列での重複削除
+
+# データ型変換
+pd.to_datetime(df['date'])           # 日付型変換
+pd.to_numeric(df['amount'])          # 数値型変換
+df['category'].astype('category')    # カテゴリ型変換
+
+# 文字列処理
+df['text'].str.strip()               # 前後の空白削除
+df['text'].str.lower()               # 小文字変換
+df['text'].str.replace('old', 'new') # 文字列置換
+```
+
+### 📊 Tableau最適化
+
+```python
+# ワイド→ロング形式変換
+pd.melt(df, id_vars=['id'], value_vars=['sales', 'profit'])
+
+# 日付階層作成
+df['year'] = df['date'].dt.year
+df['month'] = df['date'].dt.month
+df['quarter'] = df['date'].dt.quarter
+
+# カテゴリマッピング
+mapping = {'A': 'Category A', 'B': 'Category B'}
+df['category'] = df['category'].map(mapping)
+```
+
+---
+
+## 🚨 よくあるエラーと対処法
+
+### エラー1: "cannot convert string to float"
+
+```python
+# 原因：数値列に文字が混入
+# 対処法：
+df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
+# errors='coerce'で変換できない値はNaNになる
+```
+
+### エラー2: "time data does not match format"
+
+```python
+# 原因：日付形式が複数混在
+# 対処法：
+df['date'] = pd.to_datetime(df['date'], infer_datetime_format=True)
+# または
+df['date'] = pd.to_datetime(df['date'], errors='coerce')
+```
+
+### エラー3: メモリ不足
+
+```python
+# 対処法：チャンク読み込み
+chunks = pd.read_csv('large_file.csv', chunksize=10000)
+df_list = [chunk for chunk in chunks]
+df = pd.concat(df_list, ignore_index=True)
+```
+
+---
+
+## 🔧 完全自動化関数
+
+```python
+def complete_data_cleaning(file_path, output_path=None):
+    """
+    データクリーニングを完全自動化する関数
+    
+    Parameters:
+    file_path (str): 入力ファイルのパス
+    output_path (str): 出力ファイルのパス（Noneの場合は自動生成）
+    
+    Returns:
+    pd.DataFrame: クリーニング済みのデータフレーム
+    """
+    
+    print("🚀 データクリーニング開始...")
+    
+    # 1. データ読み込み
+    print("📖 データ読み込み中...")
+    df = pd.read_csv(file_path)
+    print(f"   読み込み完了: {df.shape[0]}行 × {df.shape[1]}列")
+    
+    # 2. 基本情報表示
+    print("\n📊 データ概要:")
+    print(f"   欠損値: {df.isnull().sum().sum()}個")
+    print(f"   重複行: {df.duplicated().sum()}行")
+    
+    # 3. 列名標準化
+    print("\n🏷️  列名標準化中...")
+    df.columns = df.columns.str.lower().str.replace(' ', '_').str.replace('[^a-zA-Z0-9_]', '', regex=True)
+    
+    # 4. 重複削除
+    print("🗑️  重複削除中...")
+    initial_rows = len(df)
+    df = df.drop_duplicates()
+    print(f"   {initial_rows - len(df)}行削除")
+    
+    # 5. データ型変換
+    print("🔄 データ型変換中...")
+    df = convert_data_types(df)
+    
+    # 6. 欠損値処理
+    print("🩹 欠損値処理中...")
+    df = handle_missing_values(df)
+    
+    # 7. Tableau最適化
+    print("⚡ Tableau用最適化中...")
+    df = optimize_for_tableau(df)
+    
+    # 8. 出力
+    if output_path is None:
+        output_path = file_path.replace('.csv', '_cleaned.csv')
+    
+    df.to_csv(output_path, index=False, encoding='utf-8')
+    print(f"✅ クリーニング完了！出力: {output_path}")
+    
+    # 9. 最終レポート
+    print("\n📈 最終レポート:")
+    print(f"   最終データ: {df.shape[0]}行 × {df.shape[1]}列")
+    print(f"   欠損値: {df.isnull().sum().sum()}個")
+    print(f"   データ型: {df.dtypes.value_counts().to_dict()}")
+    
+    return df
+
+# 使用例
+cleaned_df = complete_data_cleaning('raw_data.csv')
+```
+
+---
+
+## 📚 おすすめの学習リソース
+
+1. **公式ドキュメント**
+   - [Pandas公式ドキュメント](https://pandas.pydata.org/docs/)
+   - [Tableau公式ヘルプ](https://help.tableau.com/)
+
+2. **練習用データセット**
+   - Kaggleの初心者向けデータセット
+   - seabornライブラリのサンプルデータ
+
+3. **次のステップ**
+   - データビジュアライゼーション（matplotlib, seaborn）
+   - 統計分析の基礎
+   - SQLとの連携
+
+---
+
+## 💡 プロのTips
+
+1. **常にバックアップを作成**: `df.copy()`を使用
+2. **処理の記録を残す**: コメントや変更ログを書く
+3. **小さなサンプルでテスト**: 全データで実行する前に一部でテスト
+4. **エラーハンドリングを忘れずに**: `try-except`文を活用
+5. **パフォーマンスを意識**: 大きなデータでは処理時間に注意
+
+---
+
+## 🎉 まとめ
+
+データクリーニングは地味な作業ですが、後の分析の質を大きく左右します。このガイドのステップを順番に実行すれば、Tableauで美しく意味のあるビジュアライゼーションが作成できるはずです。
+
+**覚えておくべき3つのポイント:**
+1. データの理解から始める（info(), describe()）
+2. 段階的に処理する（一気にやろうとしない）
+3. 結果を必ず確認する（before/afterの比較）
+
+頑張って、素晴らしいデータアナリストになってください！🚀
