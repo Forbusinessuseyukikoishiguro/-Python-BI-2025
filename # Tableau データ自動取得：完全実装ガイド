@@ -1,0 +1,663 @@
+# Tableau データ自動取得：完全実装ガイド
+
+## 🎯 目的別おすすめ手法
+
+| 目的 | 推奨手法 | 更新頻度 | 難易度 |
+|------|----------|----------|--------|
+| リアルタイム分析 | Live Connection | リアルタイム | ⭐⭐ |
+| 日次バッチ更新 | Extract Refresh + Python | 日次〜週次 | ⭐⭐⭐ |
+| 複雑なETL処理 | Tableau Prep + API | 任意 | ⭐⭐⭐⭐ |
+| クラウドデータ | Tableau Bridge | 15分〜1時間 | ⭐⭐ |
+| 外部システム連携 | REST API + Python | 任意 | ⭐⭐⭐⭐⭐ |
+
+---
+
+## 🚀 方法1: Extract Refresh（最も一般的）
+
+### 概要
+Tableauの標準機能を使ってデータ抽出を定期的に更新する方法。
+
+### 実装手順
+
+#### Step 1: Extract作成
+```python
+# データソース準備用Pythonスクリプト
+import pandas as pd
+import sqlite3
+from datetime import datetime
+
+def prepare_data_for_tableau():
+    """Tableau用のデータを準備する"""
+    
+    # データベースから最新データを取得
+    conn = sqlite3.connect('business_data.db')
+    
+    query = """
+    SELECT 
+        date,
+        product_id,
+        sales_amount,
+        customer_id,
+        region
+    FROM sales_data 
+    WHERE date >= date('now', '-30 days')
+    """
+    
+    df = pd.read_sql_query(query, conn)
+    
+    # データクリーニング
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.dropna()
+    
+    # Tableau用CSVとして保存
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'tableau_data_{timestamp}.csv'
+    df.to_csv(filename, index=False)
+    
+    conn.close()
+    return filename
+
+if __name__ == "__main__":
+    filename = prepare_data_for_tableau()
+    print(f"Data prepared: {filename}")
+```
+
+#### Step 2: Tableau側設定
+1. **データソース作成**: CSVファイルを接続
+2. **Extract作成**: 「データ」→「抽出」→「作成」
+3. **更新スケジュール設定**: Tableau Server/Onlineで設定
+
+---
+
+## ⚡ 方法2: REST API自動化
+
+### Python実装例
+
+```python
+import requests
+import pandas as pd
+import json
+import os
+from datetime import datetime
+
+class TableauDataUpdater:
+    def __init__(self, server_url, username, password, site_id=''):
+        self.server_url = server_url
+        self.username = username
+        self.password = password
+        self.site_id = site_id
+        self.auth_token = None
+        self.site_id_actual = None
+        
+    def sign_in(self):
+        """Tableau Serverにサインイン"""
+        url = f"{self.server_url}/api/3.15/auth/signin"
+        
+        # リクエストボディ
+        payload = {
+            'credentials': {
+                'name': self.username,
+                'password': self.password,
+                'site': {
+                    'contentUrl': self.site_id
+                }
+            }
+        }
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+        
+        response = requests.post(url, json=payload, headers=headers)
+        
+        if response.status_code == 200:
+            result = response.json()
+            self.auth_token = result['credentials']['token']
+            self.site_id_actual = result['credentials']['site']['id']
+            print("✅ サインイン成功")
+            return True
+        else:
+            print(f"❌ サインイン失敗: {response.status_code}")
+            return False
+    
+    def upload_data_source(self, file_path, datasource_name):
+        """データソースをアップロード"""
+        if not self.auth_token:
+            print("❌ 先にサインインしてください")
+            return False
+            
+        url = f"{self.server_url}/api/3.15/sites/{self.site_id_actual}/datasources"
+        
+        headers = {
+            'X-Tableau-Auth': self.auth_token
+        }
+        
+        # マルチパートフォームデータ
+        files = {
+            'tableau_datasource': open(file_path, 'rb'),
+            'datasource_name': (None, datasource_name),
+            'overwrite': (None, 'true')
+        }
+        
+        response = requests.post(url, headers=headers, files=files)
+        
+        if response.status_code == 201:
+            print(f"✅ データソース '{datasource_name}' アップロード成功")
+            return True
+        else:
+            print(f"❌ アップロード失敗: {response.status_code}")
+            print(response.text)
+            return False
+    
+    def refresh_extract(self, datasource_id):
+        """Extract を強制更新"""
+        url = f"{self.server_url}/api/3.15/sites/{self.site_id_actual}/datasources/{datasource_id}/refresh"
+        
+        headers = {
+            'X-Tableau-Auth': self.auth_token,
+            'Content-Type': 'application/json'
+        }
+        
+        response = requests.post(url, headers=headers)
+        
+        if response.status_code == 202:
+            print("✅ Extract更新開始")
+            return True
+        else:
+            print(f"❌ Extract更新失敗: {response.status_code}")
+            return False
+    
+    def sign_out(self):
+        """サインアウト"""
+        if self.auth_token:
+            url = f"{self.server_url}/api/3.15/auth/signout"
+            headers = {'X-Tableau-Auth': self.auth_token}
+            requests.post(url, headers=headers)
+            print("✅ サインアウト完了")
+
+# 使用例
+def automated_data_update():
+    """自動データ更新の実行"""
+    
+    # 1. 最新データの準備
+    print("📊 最新データを準備中...")
+    df = fetch_latest_data()  # 独自のデータ取得関数
+    
+    # 2. データクリーニング
+    df_cleaned = clean_data_for_tableau(df)
+    
+    # 3. ファイル保存
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'auto_update_{timestamp}.csv'
+    df_cleaned.to_csv(filename, index=False)
+    
+    # 4. Tableau Serverにアップロード
+    updater = TableauDataUpdater(
+        server_url='https://your-tableau-server.com',
+        username='your_username',
+        password='your_password',
+        site_id='your_site'
+    )
+    
+    if updater.sign_in():
+        updater.upload_data_source(filename, 'AutoUpdatedData')
+        updater.sign_out()
+    
+    # 5. 一時ファイルを削除
+    os.remove(filename)
+    print("🎉 自動更新完了")
+
+if __name__ == "__main__":
+    automated_data_update()
+```
+
+---
+
+## 🔄 方法3: Tableau Prep自動化
+
+### Tableau Prep Flow + Python
+
+```python
+import subprocess
+import json
+import os
+
+class TableauPrepAutomation:
+    def __init__(self, prep_path, flow_path):
+        self.prep_path = prep_path  # Tableau Prep実行ファイルパス
+        self.flow_path = flow_path  # .tflファイルパス
+        
+    def run_flow(self, output_path=None):
+        """Prep Flowを実行"""
+        
+        cmd = [
+            self.prep_path,
+            '-t', self.flow_path  # flowファイルを指定
+        ]
+        
+        if output_path:
+            cmd.extend(['-o', output_path])
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print("✅ Tableau Prep Flow実行成功")
+                return True
+            else:
+                print(f"❌ Flow実行失敗: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ エラー: {e}")
+            return False
+
+# バッチスクリプト例（Windows）
+def create_batch_script():
+    """Windows用バッチスクリプトを作成"""
+    
+    script_content = '''
+@echo off
+echo "Tableau自動更新開始..."
+
+:: Python環境の活性化
+call C:\\path\\to\\venv\\Scripts\\activate.bat
+
+:: データ準備スクリプト実行
+python prepare_data.py
+
+:: Tableau Prep Flow実行
+"C:\\Program Files\\Tableau\\Tableau Prep Builder 2023.1\\bin\\tableau-prep-cli.cmd" -t "C:\\path\\to\\your_flow.tfl"
+
+:: 完了通知
+echo "自動更新完了"
+pause
+'''
+    
+    with open('tableau_auto_update.bat', 'w') as f:
+        f.write(script_content)
+    
+    print("✅ バッチスクリプト作成完了")
+
+# 実行例
+prep_automation = TableauPrepAutomation(
+    prep_path="C:\\Program Files\\Tableau\\Tableau Prep Builder 2023.1\\bin\\tableau-prep-cli.cmd",
+    flow_path="C:\\path\\to\\your_flow.tfl"
+)
+
+prep_automation.run_flow()
+```
+
+---
+
+## 🌐 方法4: Web Data Connector (WDC)
+
+### カスタムWDC作成
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Custom WDC</title>
+    <meta charset="utf-8">
+    <script src="https://connectors.tableau.com/libs/tableauwdc-2.3.latest.js"></script>
+</head>
+<body>
+    <div id="submitButton">
+        <button type="button" onclick="getData()">Get Data</button>
+    </div>
+
+    <script>
+    (function() {
+        var myConnector = tableau.makeConnector();
+
+        myConnector.getSchema = function(schemaCallback) {
+            var cols = [{
+                id: "date",
+                dataType: tableau.dataTypeEnum.date
+            }, {
+                id: "sales",
+                alias: "Sales Amount",
+                dataType: tableau.dataTypeEnum.float
+            }, {
+                id: "product",
+                alias: "Product Name",
+                dataType: tableau.dataTypeEnum.string
+            }];
+
+            var tableSchema = {
+                id: "salesData",
+                alias: "Sales Data",
+                columns: cols
+            };
+
+            schemaCallback([tableSchema]);
+        };
+
+        myConnector.getData = function(table, doneCallback) {
+            // APIからデータを取得
+            fetch('https://api.your-company.com/sales-data')
+                .then(response => response.json())
+                .then(data => {
+                    var tableData = [];
+                    
+                    data.forEach(function(item) {
+                        tableData.push({
+                            "date": item.date,
+                            "sales": item.sales_amount,
+                            "product": item.product_name
+                        });
+                    });
+                    
+                    table.appendRows(tableData);
+                    doneCallback();
+                })
+                .catch(error => {
+                    tableau.abortWithError("データ取得エラー: " + error);
+                });
+        };
+
+        tableau.registerConnector(myConnector);
+
+        function getData() {
+            tableau.connectionName = "Custom Sales Data";
+            tableau.submit();
+        }
+
+        // 自動実行（オプション）
+        window.onload = function() {
+            if (tableau.phase === tableau.phaseEnum.gatherDataPhase) {
+                getData();
+            }
+        };
+    })();
+    </script>
+</body>
+</html>
+```
+
+---
+
+## ⏰ 方法5: スケジュール実行設定
+
+### Windowsタスクスケジューラ
+
+```python
+# schedule_setup.py
+import schedule
+import time
+import logging
+from datetime import datetime
+
+# ログ設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('tableau_automation.log'),
+        logging.StreamHandler()
+    ]
+)
+
+def daily_data_update():
+    """日次データ更新タスク"""
+    try:
+        logging.info("日次データ更新開始")
+        
+        # データ準備
+        prepare_data_for_tableau()
+        
+        # Tableau更新
+        update_tableau_extracts()
+        
+        logging.info("日次データ更新完了")
+        
+    except Exception as e:
+        logging.error(f"エラー発生: {e}")
+
+def hourly_refresh():
+    """時間ごとの簡易更新"""
+    try:
+        logging.info("時間更新開始")
+        refresh_live_connections()
+        logging.info("時間更新完了")
+        
+    except Exception as e:
+        logging.error(f"時間更新エラー: {e}")
+
+# スケジュール設定
+schedule.every().day.at("06:00").do(daily_data_update)
+schedule.every().hour.at(":00").do(hourly_refresh)
+
+# 実行ループ
+def run_scheduler():
+    logging.info("スケジューラー開始")
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(60)  # 1分ごとにチェック
+
+if __name__ == "__main__":
+    run_scheduler()
+```
+
+### Linux Cron設定
+
+```bash
+# crontab -e で編集
+
+# 毎日6時にデータ更新
+0 6 * * * /usr/bin/python3 /path/to/tableau_update.py
+
+# 1時間ごとにExtract更新
+0 * * * * /usr/bin/python3 /path/to/hourly_refresh.py
+
+# 平日のみ実行（月〜金）
+0 8 * * 1-5 /usr/bin/python3 /path/to/weekday_update.py
+```
+
+---
+
+## 🔧 実用的な統合ソリューション
+
+### 完全自動化クラス
+
+```python
+import pandas as pd
+import requests
+import sqlite3
+import schedule
+import time
+import smtplib
+from email.mime.text import MIMEText
+from datetime import datetime, timedelta
+import logging
+
+class TableauAutoUpdater:
+    def __init__(self, config):
+        self.config = config
+        self.setup_logging()
+        
+    def setup_logging(self):
+        """ログ設定"""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('tableau_auto.log'),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging
+    
+    def extract_data_from_source(self):
+        """データソースから抽出"""
+        try:
+            if self.config['source_type'] == 'database':
+                return self._extract_from_database()
+            elif self.config['source_type'] == 'api':
+                return self._extract_from_api()
+            elif self.config['source_type'] == 'file':
+                return self._extract_from_file()
+        except Exception as e:
+            self.logger.error(f"データ抽出エラー: {e}")
+            return None
+    
+    def _extract_from_database(self):
+        """データベースから抽出"""
+        conn = sqlite3.connect(self.config['db_path'])
+        df = pd.read_sql_query(self.config['query'], conn)
+        conn.close()
+        return df
+    
+    def _extract_from_api(self):
+        """APIから抽出"""
+        response = requests.get(
+            self.config['api_url'],
+            headers=self.config.get('api_headers', {}),
+            params=self.config.get('api_params', {})
+        )
+        return pd.DataFrame(response.json())
+    
+    def transform_data(self, df):
+        """データ変換"""
+        if df is None:
+            return None
+            
+        # 基本的なクリーニング
+        df = df.dropna()
+        df = df.drop_duplicates()
+        
+        # 日付変換
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+        
+        # カスタム変換
+        if 'transformations' in self.config:
+            for transform in self.config['transformations']:
+                df = self._apply_transformation(df, transform)
+        
+        return df
+    
+    def update_tableau(self, df):
+        """Tableauを更新"""
+        if df is None:
+            return False
+            
+        try:
+            # CSV保存
+            filename = f"tableau_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            df.to_csv(filename, index=False)
+            
+            # Tableau Server API経由で更新
+            updater = TableauDataUpdater(
+                self.config['tableau_server'],
+                self.config['tableau_username'],
+                self.config['tableau_password']
+            )
+            
+            if updater.sign_in():
+                success = updater.upload_data_source(filename, self.config['datasource_name'])
+                updater.sign_out()
+                return success
+                
+        except Exception as e:
+            self.logger.error(f"Tableau更新エラー: {e}")
+            return False
+    
+    def send_notification(self, success, message=""):
+        """結果通知"""
+        if not self.config.get('send_notifications', False):
+            return
+            
+        status = "成功" if success else "失敗"
+        subject = f"Tableau自動更新 {status}"
+        
+        msg = MIMEText(f"""
+        Tableau自動更新が完了しました。
+        
+        ステータス: {status}
+        時刻: {datetime.now()}
+        メッセージ: {message}
+        """)
+        
+        msg['Subject'] = subject
+        msg['From'] = self.config['email_from']
+        msg['To'] = self.config['email_to']
+        
+        try:
+            with smtplib.SMTP(self.config['smtp_server']) as server:
+                server.send_message(msg)
+        except Exception as e:
+            self.logger.error(f"通知送信エラー: {e}")
+    
+    def run_update_cycle(self):
+        """更新サイクル実行"""
+        self.logger.info("自動更新サイクル開始")
+        
+        # データ抽出
+        df = self.extract_data_from_source()
+        if df is None:
+            self.send_notification(False, "データ抽出失敗")
+            return
+        
+        # データ変換
+        df_transformed = self.transform_data(df)
+        
+        # Tableau更新
+        success = self.update_tableau(df_transformed)
+        
+        # 通知
+        message = f"処理行数: {len(df_transformed)}" if success else "更新失敗"
+        self.send_notification(success, message)
+        
+        self.logger.info(f"更新サイクル完了: {'成功' if success else '失敗'}")
+
+# 設定例
+config = {
+    'source_type': 'database',
+    'db_path': 'business.db',
+    'query': 'SELECT * FROM sales WHERE date >= date("now", "-7 days")',
+    'tableau_server': 'https://your-tableau-server.com',
+    'tableau_username': 'username',
+    'tableau_password': 'password',
+    'datasource_name': 'AutoSalesData',
+    'send_notifications': True,
+    'email_from': 'system@company.com',
+    'email_to': 'analyst@company.com',
+    'smtp_server': 'smtp.company.com'
+}
+
+# 実行
+if __name__ == "__main__":
+    updater = TableauAutoUpdater(config)
+    
+    # 日次実行スケジュール
+    schedule.every().day.at("06:00").do(updater.run_update_cycle)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(3600)  # 1時間ごとにチェック
+```
+
+---
+
+## 🚀 おすすめの実装戦略
+
+### フェーズ1: 基本自動化
+1. **Extract Refresh**から開始
+2. **Python + CSV**での简单な更新
+3. **手動スケジュール**での動作確認
+
+### フェーズ2: 高度自動化
+1. **REST API**導入
+2. **エラーハンドリング**強化
+3. **監視・アラート**機能追加
+
+### フェーズ3: エンタープライズ対応
+1. **Tableau Prep**統合
+2. **複数データソース**対応
+3. **パフォーマンス最適化**
+
+この段階的なアプローチで、安定したTableau自動化システムを構築できます！
