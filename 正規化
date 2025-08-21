@@ -1,0 +1,501 @@
+# TableauとPythonで学ぶデータ正規化チートシート
+## 新人エンジニア向け完全ガイド
+
+---
+
+## 📚 データ正規化とは？
+
+データ正規化とは、異なるスケールや単位のデータを統一された範囲に変換する処理です。機械学習やデータ分析において、データの特徴量間の影響を均等にするために重要な前処理手法です。
+
+### なぜ正規化が必要？
+- **スケールの違い**: 年収（数百万円）と年齢（数十歳）など、単位が異なるデータを比較可能にする
+- **アルゴリズムの精度向上**: 距離ベースのアルゴリズム（KNN、SVM等）では必須
+- **学習の安定化**: 勾配降下法での収束を早める
+
+---
+
+## 🎯 主要な正規化手法
+
+### 1. Min-Max正規化（0-1スケーリング）
+```
+正規化後 = (元の値 - 最小値) / (最大値 - 最小値)
+```
+**特徴**: 0から1の範囲に変換
+
+### 2. Z-score正規化（標準化）
+```
+正規化後 = (元の値 - 平均値) / 標準偏差
+```
+**特徴**: 平均0、標準偏差1の正規分布に変換
+
+### 3. Robust正規化
+```
+正規化後 = (元の値 - 中央値) / (75%点 - 25%点)
+```
+**特徴**: 外れ値に対して頑健
+
+---
+
+## 🐍 Python（pandas）での実装
+
+### 環境準備
+
+```python
+# 必要なライブラリをインポート
+import pandas as pd                    # データフレーム操作用
+import numpy as np                     # 数値計算用
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler  # 正規化ライブラリ
+import matplotlib.pyplot as plt        # グラフ描画用
+import seaborn as sns                  # 統計的グラフ描画用
+
+# 日本語フォント設定（matplotlib用）
+plt.rcParams['font.family'] = 'DejaVu Sans'  # フォント指定
+```
+
+### サンプルデータの作成
+
+```python
+# サンプルデータを作成
+np.random.seed(42)                     # 再現性確保のためのシード設定
+
+# 辞書形式でデータを定義
+data = {
+    'name': ['田中', '佐藤', '山田', '鈴木', '高橋'],              # 名前（文字列）
+    'age': [25, 35, 28, 42, 31],                                # 年齢（小さい数値）
+    'salary': [3500000, 6200000, 4100000, 7800000, 5300000],   # 年収（大きい数値）
+    'experience': [2, 12, 5, 18, 8]                             # 経験年数（中程度の数値）
+}
+
+# データフレームに変換
+df = pd.DataFrame(data)                # pandasのDataFrame型に変換
+
+# データの確認
+print("元データ:")                      # 確認用メッセージ
+print(df)                              # データフレーム全体を表示
+```
+
+### 1. Min-Max正規化の実装
+
+```python
+# Min-Max正規化（0-1スケーリング）
+print("\n=== Min-Max正規化 ===")        # セクション区切り用
+
+# 数値列のみを抽出
+numeric_columns = ['age', 'salary', 'experience']  # 正規化対象の列を指定
+
+# Min-Maxスケーラーのインスタンスを作成
+scaler_minmax = MinMaxScaler()         # sklearn の Min-Max スケーラー
+
+# 正規化を実行（fit_transformで学習と変換を同時実行）
+df_minmax = df.copy()                  # 元データをコピー（破壊的変更を避ける）
+df_minmax[numeric_columns] = scaler_minmax.fit_transform(df[numeric_columns])  # 指定列のみ正規化
+
+# 結果表示
+print("Min-Max正規化後:")               # 結果確認用メッセージ
+print(df_minmax)                       # 正規化後のデータを表示
+
+# 正規化後の統計情報
+print("\n正規化後の統計情報:")           # 統計情報見出し
+print(df_minmax[numeric_columns].describe())  # 基本統計量を表示
+```
+
+### 2. Z-score正規化（標準化）の実装
+
+```python
+# Z-score正規化（標準化）
+print("\n=== Z-score正規化 ===")        # セクション区切り用
+
+# StandardScalerのインスタンスを作成
+scaler_standard = StandardScaler()     # sklearn の標準化スケーラー
+
+# 正規化を実行
+df_standard = df.copy()                # 元データをコピー
+df_standard[numeric_columns] = scaler_standard.fit_transform(df[numeric_columns])  # 標準化実行
+
+# 結果表示
+print("Z-score正規化後:")               # 結果確認用メッセージ
+print(df_standard)                     # 標準化後のデータを表示
+
+# 平均と標準偏差の確認
+print("\n正規化後の平均値:")             # 平均値確認
+print(df_standard[numeric_columns].mean())  # 各列の平均値（0に近いはず）
+
+print("\n正規化後の標準偏差:")           # 標準偏差確認
+print(df_standard[numeric_columns].std())   # 各列の標準偏差（1に近いはず）
+```
+
+### 3. Robust正規化の実装
+
+```python
+# Robust正規化（外れ値に頑健）
+print("\n=== Robust正規化 ===")         # セクション区切り用
+
+# RobustScalerのインスタンスを作成
+scaler_robust = RobustScaler()         # sklearn のロバストスケーラー
+
+# 正規化を実行
+df_robust = df.copy()                  # 元データをコピー
+df_robust[numeric_columns] = scaler_robust.fit_transform(df[numeric_columns])  # ロバスト正規化実行
+
+# 結果表示
+print("Robust正規化後:")                # 結果確認用メッセージ
+print(df_robust)                       # 正規化後のデータを表示
+
+# 中央値の確認
+print("\n正規化後の中央値:")             # 中央値確認
+print(df_robust[numeric_columns].median())  # 各列の中央値（0に近いはず）
+```
+
+### 4. 手動実装（理解を深める）
+
+```python
+# 手動でMin-Max正規化を実装
+print("\n=== 手動Min-Max正規化 ===")     # セクション区切り用
+
+def manual_minmax_normalize(series):   # 関数定義：Min-Max正規化
+    """
+    Min-Max正規化を手動で実装
+    """
+    min_val = series.min()             # 系列の最小値を取得
+    max_val = series.max()             # 系列の最大値を取得
+    normalized = (series - min_val) / (max_val - min_val)  # 正規化計算
+    return normalized                  # 正規化後の系列を返す
+
+# 各列に対して手動正規化を適用
+df_manual = df.copy()                  # 元データをコピー
+
+for col in numeric_columns:            # 数値列をループ処理
+    print(f"\n{col}列の正規化:")         # 処理中の列名を表示
+    original_values = df[col]          # 元の値を取得
+    normalized_values = manual_minmax_normalize(original_values)  # 正規化実行
+    df_manual[col] = normalized_values # 正規化後の値を格納
+    
+    # 計算過程を表示
+    print(f"最小値: {original_values.min()}")      # 最小値表示
+    print(f"最大値: {original_values.max()}")      # 最大値表示
+    print(f"正規化前: {original_values.tolist()}")  # 正規化前の値一覧
+    print(f"正規化後: {normalized_values.round(3).tolist()}")  # 正規化後の値一覧（小数点3桁）
+
+print("\n手動正規化後の全データ:")       # 最終結果見出し
+print(df_manual)                       # 手動正規化後のデータ全体を表示
+```
+
+### 5. 可視化で理解を深める
+
+```python
+# 正規化前後の比較可視化
+print("\n=== 可視化による比較 ===")      # セクション区切り用
+
+# グラフのサイズ設定
+plt.figure(figsize=(15, 10))           # 図のサイズを指定（幅15, 高さ10インチ）
+
+# 正規化前のデータ可視化
+plt.subplot(2, 2, 1)                   # 2行2列の1番目のサブプロット
+for col in numeric_columns:            # 各数値列をループ
+    plt.plot(df.index, df[col], marker='o', label=col)  # 折れ線グラフで描画
+plt.title('正規化前のデータ')            # グラフタイトル
+plt.legend()                           # 凡例表示
+plt.grid(True)                         # グリッド表示
+
+# Min-Max正規化後
+plt.subplot(2, 2, 2)                   # 2行2列の2番目のサブプロット
+for col in numeric_columns:            # 各数値列をループ
+    plt.plot(df_minmax.index, df_minmax[col], marker='s', label=col)  # 正方形マーカーで描画
+plt.title('Min-Max正規化後')            # グラフタイトル
+plt.legend()                           # 凡例表示
+plt.grid(True)                         # グリッド表示
+
+# Z-score正規化後
+plt.subplot(2, 2, 3)                   # 2行2列の3番目のサブプロット
+for col in numeric_columns:            # 各数値列をループ
+    plt.plot(df_standard.index, df_standard[col], marker='^', label=col)  # 三角マーカーで描画
+plt.title('Z-score正規化後')            # グラフタイトル
+plt.legend()                           # 凡例表示
+plt.grid(True)                         # グリッド表示
+
+# Robust正規化後
+plt.subplot(2, 2, 4)                   # 2行2列の4番目のサブプロット
+for col in numeric_columns:            # 各数値列をループ
+    plt.plot(df_robust.index, df_robust[col], marker='d', label=col)  # ダイヤモンドマーカーで描画
+plt.title('Robust正規化後')             # グラフタイトル
+plt.legend()                           # 凡例表示
+plt.grid(True)                         # グリッド表示
+
+plt.tight_layout()                     # レイアウト自動調整
+plt.show()                             # グラフ表示
+
+# 分布の比較（ヒストグラム）
+plt.figure(figsize=(12, 8))            # 新しい図のサイズ設定
+
+for i, col in enumerate(numeric_columns):  # 列をインデックス付きでループ
+    plt.subplot(2, 3, i+1)             # 2行3列のサブプロット（i+1番目）
+    plt.hist(df[col], alpha=0.5, label='元データ', bins=10)  # 元データのヒストグラム
+    plt.hist(df_minmax[col], alpha=0.5, label='Min-Max', bins=10)  # Min-Max正規化後
+    plt.title(f'{col}の分布比較')        # 各列のタイトル
+    plt.legend()                       # 凡例表示
+    plt.grid(True, alpha=0.3)          # 薄いグリッド表示
+
+plt.tight_layout()                     # レイアウト自動調整
+plt.show()                             # グラフ表示
+```
+
+### 6. 実際のデータ分析での活用例
+
+```python
+# より実践的な例：相関分析での正規化効果
+print("\n=== 相関分析での正規化効果 ===")  # セクション区切り用
+
+# 正規化前の相関係数
+print("正規化前の相関係数:")             # 見出し
+corr_before = df[numeric_columns].corr()  # 相関行列計算
+print(corr_before.round(3))             # 小数点3桁で表示
+
+# 正規化後の相関係数
+print("\nMin-Max正規化後の相関係数:")    # 見出し
+corr_after = df_minmax[numeric_columns].corr()  # 正規化後の相関行列
+print(corr_after.round(3))              # 小数点3桁で表示
+
+# 相関係数は正規化前後で変わらないことを確認
+print("\n相関係数の差（理論的には0に近い値）:")  # 確認メッセージ
+print((corr_after - corr_before).round(6))      # 差を計算（非常に小さいはず）
+
+# 相関行列の可視化
+plt.figure(figsize=(12, 5))            # 図のサイズ設定
+
+plt.subplot(1, 2, 1)                   # 1行2列の1番目
+sns.heatmap(corr_before, annot=True, cmap='coolwarm', center=0)  # ヒートマップ描画
+plt.title('正規化前の相関係数')          # タイトル
+
+plt.subplot(1, 2, 2)                   # 1行2列の2番目
+sns.heatmap(corr_after, annot=True, cmap='coolwarm', center=0)   # ヒートマップ描画
+plt.title('正規化後の相関係数')          # タイトル
+
+plt.tight_layout()                     # レイアウト調整
+plt.show()                             # 表示
+```
+
+---
+
+## 📊 Tableauでのデータ正規化
+
+### 1. 計算フィールドによるMin-Max正規化
+
+```sql
+// Min-Max正規化の計算フィールド
+// フィールド名: [売上_正規化]
+
+([売上] - {FIXED : MIN([売上])}) / 
+({FIXED : MAX([売上])} - {FIXED : MIN([売上])})
+
+// 解説:
+// - [売上]: 正規化したい元のフィールド
+// - {FIXED : MIN([売上])}: データ全体の最小値
+// - {FIXED : MAX([売上])}: データ全体の最大値
+// - 結果は0から1の範囲になる
+```
+
+### 2. Z-score正規化（標準化）
+
+```sql
+// Z-score正規化の計算フィールド
+// フィールド名: [売上_標準化]
+
+([売上] - {FIXED : AVG([売上])}) / 
+{FIXED : STDEV([売上])}
+
+// 解説:
+// - {FIXED : AVG([売上])}: データ全体の平均値
+// - {FIXED : STDEV([売上])}: データ全体の標準偏差
+// - 結果は平均0、標準偏差1の分布になる
+```
+
+### 3. パーセンタイル正規化
+
+```sql
+// パーセンタイル正規化の計算フィールド
+// フィールド名: [売上_パーセンタイル]
+
+RANK_PERCENTILE([売上])
+
+// 解説:
+// - 各値のパーセンタイル順位を計算
+// - 0から1の範囲で表現
+// - 外れ値に対して頑健
+```
+
+### 4. 実践的なTableauワークフロー
+
+#### Step 1: データソースの接続
+```
+1. Tableauを起動
+2. データソース（Excel, CSV, データベース等）に接続
+3. データプレビューで数値フィールドを確認
+```
+
+#### Step 2: 計算フィールドの作成
+```
+1. [分析] → [計算フィールドの作成]
+2. 上記の正規化式を入力
+3. フィールド名を分かりやすく設定
+```
+
+#### Step 3: 可視化での活用
+```
+1. 正規化前後のデータを散布図で比較
+2. ダッシュボードに正規化効果を表示
+3. フィルターで正規化方法を切り替え可能にする
+```
+
+---
+
+## 🎯 実践での使い分けガイド
+
+### Min-Max正規化を使う場面
+- **データの範囲が明確**: 0-100点のテストスコアなど
+- **外れ値が少ない**: データが比較的均等に分布
+- **解釈しやすさ重視**: 0-1の範囲で直感的
+
+### Z-score正規化を使う場面
+- **機械学習の前処理**: 特にニューラルネットワーク
+- **正規分布に近いデータ**: 統計的手法との相性が良い
+- **異なる単位の特徴量**: 年収と年齢など
+
+### Robust正規化を使う場面
+- **外れ値が多い**: 異常値に影響されたくない
+- **分布が歪んでいる**: 正規分布から大きく外れている
+- **ロバストな分析**: 安定した結果が欲しい
+
+---
+
+## ⚠️ 注意点とベストプラクティス
+
+### よくある間違い
+
+```python
+# ❌ 間違い: テストデータで正規化パラメータを学習
+test_scaler = StandardScaler()                    # テスト用スケーラー作成
+test_normalized = test_scaler.fit_transform(X_test)  # テストデータで学習してしまう
+
+# ✅ 正しい: 訓練データで学習、テストデータに適用
+train_scaler = StandardScaler()                   # 訓練用スケーラー作成
+train_normalized = train_scaler.fit_transform(X_train)    # 訓練データで学習
+test_normalized = train_scaler.transform(X_test)  # 学習済みパラメータをテストに適用
+```
+
+### データリークの防止
+
+```python
+# 時系列データでの正しい分割と正規化
+from sklearn.model_selection import TimeSeriesSplit  # 時系列分割用
+
+# 時系列データの場合
+def time_series_normalize(data, train_size):      # 時系列正規化関数
+    """
+    時系列データの正規化（データリーク防止）
+    """
+    train_data = data[:train_size]                # 訓練データ分割
+    test_data = data[train_size:]                 # テストデータ分割
+    
+    scaler = StandardScaler()                     # スケーラー作成
+    scaler.fit(train_data)                        # 訓練データのみで学習
+    
+    train_normalized = scaler.transform(train_data)  # 訓練データ正規化
+    test_normalized = scaler.transform(test_data)     # テストデータ正規化
+    
+    return train_normalized, test_normalized, scaler  # 結果とスケーラーを返す
+
+# 使用例
+train_norm, test_norm, fitted_scaler = time_series_normalize(df[numeric_columns], 3)
+print("時系列正規化完了")                        # 処理完了メッセージ
+```
+
+### 正規化後の逆変換
+
+```python
+# 正規化の逆変換（元のスケールに戻す）
+print("\n=== 正規化の逆変換 ===")              # セクション見出し
+
+# Min-Maxスケーラーで正規化
+original_data = df[['salary']].values          # 元データ（給与のみ）
+scaler = MinMaxScaler()                        # スケーラー作成
+normalized_data = scaler.fit_transform(original_data)  # 正規化実行
+
+print("元データ:")                              # 元データ表示
+print(original_data.flatten())                 # 1次元配列に変換して表示
+
+print("正規化後:")                              # 正規化後表示
+print(normalized_data.flatten().round(3))      # 正規化後データ表示
+
+# 逆変換で元に戻す
+restored_data = scaler.inverse_transform(normalized_data)  # 逆変換実行
+
+print("逆変換後:")                              # 逆変換後表示
+print(restored_data.flatten())                 # 復元されたデータ表示
+
+# 元データと逆変換後の差を確認（ほぼ0になるはず）
+difference = original_data - restored_data      # 差を計算
+print("差（理論的には0）:")                      # 差の確認
+print(difference.flatten().round(10))          # 極小の差を表示
+```
+
+---
+
+## 📈 パフォーマンス最適化
+
+### 大量データでの効率的な正規化
+
+```python
+# 大量データの効率的な処理
+import dask.dataframe as dd                    # 大量データ処理用ライブラリ
+
+def efficient_normalize_large_data(file_path): # 大量データ正規化関数
+    """
+    大量データの効率的な正規化処理
+    """
+    # Daskでファイルを読み込み（メモリ効率的）
+    df_large = dd.read_csv(file_path)          # CSVを並列読み込み
+    
+    # 統計値を事前計算（一度だけ実行）
+    stats = {}                                 # 統計値格納用辞書
+    for col in numeric_columns:                # 各数値列について
+        stats[col] = {                         # 統計値を辞書に格納
+            'min': df_large[col].min().compute(),    # 最小値計算
+            'max': df_large[col].max().compute(),    # 最大値計算
+            'mean': df_large[col].mean().compute(),  # 平均値計算
+            'std': df_large[col].std().compute()     # 標準偏差計算
+        }
+    
+    # 効率的なMin-Max正規化
+    def normalize_chunk(chunk):                # チャンク単位の正規化関数
+        result = chunk.copy()                  # チャンクをコピー
+        for col in numeric_columns:            # 各列を処理
+            min_val = stats[col]['min']        # 事前計算した最小値
+            max_val = stats[col]['max']        # 事前計算した最大値
+            result[col] = (chunk[col] - min_val) / (max_val - min_val)  # 正規化計算
+        return result                          # 正規化済みチャンクを返す
+    
+    # 並列処理で正規化実行
+    normalized_df = df_large.map_partitions(normalize_chunk)  # 各パーティションに関数適用
+    
+    return normalized_df                       # 正規化済みデータフレームを返す
+
+print("大量データ処理関数を定義しました")        # 関数定義完了メッセージ
+```
+
+---
+
+## 🔍 まとめ
+
+### 新人エンジニアが覚えるべきポイント
+
+1. **目的に応じた手法選択**: データの特性を理解して適切な正規化を選ぶ
+2. **データリーク防止**: 訓練データでのみパラメータを学習し、テストデータに適用
+3. **可視化での確認**: 正規化前後の分布を必ず確認する
+4. **逆変換の保持**: モデル結果を元のスケールで解釈するため
+
+### 次のステップ
+- 特徴量エンジニアリングの学習
+- より高度な前処理手法（PCA、特徴選択等）
+- 実際のプロジェクトでの実践適用
+
+このチートシートを参考に、データ正規化をマスターして分析精度を向上させましょう！
